@@ -19,6 +19,8 @@ chains with M-parallel tool calls). See :mod:`aevyra_witness.trace` for the
 schema.
 """
 
+from aevyra_witness.adapters import from_openclaw_jsonl, from_otel_spans
+from aevyra_witness.interceptors import MCPInterceptor, wrap_mcp_session
 from aevyra_witness.runtime import Tracer, current_tracer, span, trace
 from aevyra_witness.trace import (
     KIND_AGENT,
@@ -44,6 +46,10 @@ __all__ = [
     "trace",
     "span",
     "current_tracer",
+    "from_openclaw_jsonl",
+    "from_otel_spans",
+    "MCPInterceptor",
+    "wrap_mcp_session",
     "KIND_REASON",
     "KIND_TOOL",
     "KIND_RETRIEVE",
