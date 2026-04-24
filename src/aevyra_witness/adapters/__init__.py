@@ -24,11 +24,16 @@ Currently provided:
 - :mod:`aevyra_witness.adapters.openclaw` — convert OpenClaw JSONL
   telemetry (LLM turns, tool / MCP tool calls, agent lifecycle) into an
   ``AgentTrace``.
+- :mod:`aevyra_witness.adapters.otel` — convert OpenTelemetry spans
+  (Python SDK ``ReadableSpan`` objects or OTLP JSON dicts) into an
+  ``AgentTrace``. Covers LangGraph, CrewAI, AutoGen, Vercel AI SDK, and
+  any framework emitting the GenAI semantic conventions.
 
-Future adapters will live alongside (LangSmith, OpenAI tool-use,
-LangGraph, OTel spans). They all emit the same ``AgentTrace``.
+Future adapters will live alongside (LangSmith, A2A). They all emit the
+same ``AgentTrace``.
 """
 
 from aevyra_witness.adapters.openclaw import from_openclaw_jsonl
+from aevyra_witness.adapters.otel import from_otel_spans
 
-__all__ = ["from_openclaw_jsonl"]
+__all__ = ["from_openclaw_jsonl", "from_otel_spans"]
