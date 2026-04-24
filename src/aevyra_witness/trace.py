@@ -103,31 +103,31 @@ _INLINE_MAX_LEN = 60
 # Recommended values for ``TraceNode.kind``. Not enforced — adapters may
 # emit custom kinds — but downstream tools (Origin, Verdict) render and
 # reason about these specifically.
-KIND_REASON = "reason"      # An LLM reasoning / planning step.
-KIND_TOOL = "tool"          # A tool / function call (native or MCP).
+KIND_REASON = "reason"  # An LLM reasoning / planning step.
+KIND_TOOL = "tool"  # A tool / function call (native or MCP).
 KIND_RETRIEVE = "retrieve"  # A retrieval or memory lookup.
-KIND_AGENT = "agent"        # A nested sub-agent invocation.
-KIND_OTHER = "other"        # Anything else / unspecified.
+KIND_AGENT = "agent"  # A nested sub-agent invocation.
+KIND_OTHER = "other"  # Anything else / unspecified.
 
 VALID_KINDS = (KIND_REASON, KIND_TOOL, KIND_RETRIEVE, KIND_AGENT, KIND_OTHER)
 
 # Metadata key conventions. These are strings adapters and users are
 # encouraged to use so downstream tools can render them specially. All
 # are optional — missing keys fall back to generic rendering.
-META_MCP_SERVER = "mcp_server"      # Name of the MCP server that exposed
-                                    # this tool (e.g. "github", "slack").
-                                    # Presence signals "this is an MCP tool
-                                    # call" to downstream tools and is
-                                    # rendered prominently in to_trace_text.
+META_MCP_SERVER = "mcp_server"  # Name of the MCP server that exposed
+# this tool (e.g. "github", "slack").
+# Presence signals "this is an MCP tool
+# call" to downstream tools and is
+# rendered prominently in to_trace_text.
 META_TOOL_CALL_ID = "tool_call_id"  # The LLM's tool_use id, linking this
-                                    # tool span back to the reasoning turn
-                                    # that emitted it.
-META_ERROR_CODE = "error_code"      # Machine-readable error code from a
-                                    # failed tool call. Rendered next to
-                                    # the Error: line when present.
-META_LATENCY_MS = "latency_ms"      # Wall-clock duration in milliseconds,
-                                    # when started_at/ended_at aren't
-                                    # available.
+# tool span back to the reasoning turn
+# that emitted it.
+META_ERROR_CODE = "error_code"  # Machine-readable error code from a
+# failed tool call. Rendered next to
+# the Error: line when present.
+META_LATENCY_MS = "latency_ms"  # Wall-clock duration in milliseconds,
+# when started_at/ended_at aren't
+# available.
 
 
 @dataclass

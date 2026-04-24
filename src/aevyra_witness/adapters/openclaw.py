@@ -121,16 +121,16 @@ _TYPE_KEYS = ("type", "event", "event_type", "name")
 _LLM_FRAGMENTS = ("llm", "reason", "plan", "respond")
 _TOOL_FRAGMENTS = ("tool", "mcp.call", "mcp_call")
 _AGENT_FRAGMENTS = ("agent.",)  # "agent.start", "agent.finish"; avoid matching
-                                # a user-named "research_agent" tool
+# a user-named "research_agent" tool
 
 # Task Brain (OpenClaw ≥ 2026.3.31) unified ACP, subagents, cron tasks,
 # and background CLI processes onto a SQLite-backed task ledger. The new
 # event families are treated as agent-level spans so Origin can attribute
 # failures to a specific task or cron job rather than losing them.
-_TASK_FRAGMENTS = ("task.",)    # "task.start", "task.end", "task.error",
-                                # "task.scheduled", "task.timeout"
-_CRON_FRAGMENTS = ("cron.",)    # "cron.run", "cron.finish", "cron.error"
-_ACP_FRAGMENTS = ("acp.",)      # "acp.dispatch", "acp.result" — Agent Control Protocol
+_TASK_FRAGMENTS = ("task.",)  # "task.start", "task.end", "task.error",
+# "task.scheduled", "task.timeout"
+_CRON_FRAGMENTS = ("cron.",)  # "cron.run", "cron.finish", "cron.error"
+_ACP_FRAGMENTS = ("acp.",)  # "acp.dispatch", "acp.result" — Agent Control Protocol
 
 # Event-type suffixes for start/end pairing.
 _START_SUFFIXES = (".start", "_start", ".begin", "_begin", ".request", "_request")
@@ -397,9 +397,7 @@ def _classify(ev: dict[str, Any]) -> str | None:
 
 def _build_reason_node(ev: dict[str, Any], targets: set[str]) -> TraceNode:
     prompt_id = _first_str(ev, "prompt_id", "prompt", "prompt_name")
-    optimize = bool(ev.get("optimize", False)) or (
-        prompt_id is not None and prompt_id in targets
-    )
+    optimize = bool(ev.get("optimize", False)) or (prompt_id is not None and prompt_id in targets)
     return TraceNode(
         name=_first_str(ev, "name", "label") or prompt_id or "reason",
         input=ev.get("input") or ev.get("prompt_input") or ev.get("messages"),
