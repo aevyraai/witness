@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aevyra.ai/schemas/agent-trace/v1",
+  "title": "AgentTrace",
+  "description": "A complete record of one agent pipeline execution. Language-agnostic — any language can produce a conforming JSON object and feed it directly to the Origin CLI or the aevyra-witness Python library via AgentTrace.from_dict().",
+  "type": "object",
+  "required": ["nodes"],
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "description": "Ordered list of spans in execution order. DAG structure is encoded via parent_id — a span whose parent_id matches another span's id is a child of that span.",
+      "items": { "$ref": "#/$defs/TraceNode" }
+    },
+    "ideal": {
+      "type": ["string", "null"],
+      "description": "The expected / reference output for the run. Optional. Used by ablation's 'ideal' placeholder strategy and by judges that compare against a known-good answer.",
+      "default": null
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary key/value metadata for the trace as a whole (e.g. session_id, model_name, pipeline_version, user_id). All values must be JSON-serializable.",
+      "additionalProperties": true,
+      "default": {}
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "TraceNode": {
+      "title": "TraceNode",
+      "description": "One span in the execution trace — an LLM call, a tool call, a retrieval, or a nested sub-agent invocation.",
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable span name (e.g. 'classify_ticket', 'stripe_lookup'). Does not need to be unique — use id for stable identity."
+        },
+        "input": {
+          "description": "The span's input. Any JSON-serializable value: string, object, array, or null.",
+          "default": null
+        },
+        "output": {
+          "description": "The span's output. Any JSON-serializable value: string, object, array, or null.",
+          "default": null
+        },
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this span within the trace. If omitted or empty, aevyra-witness auto-assigns 'n{index}' (e.g. 'n0', 'n1'). Required when DAG wiring via parent_id is needed.",
+          "default": ""
+        },
+        "parent_id": {
+          "type": ["string", "null"],
+          "description": "id of the parent span. null (or omitted) means this is a root span. Parallel siblings share the same parent_id.",
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "description": "What kind of work this span performed. Well-known values are rendered specially by downstream tools; custom strings are allowed.",
+          "enum": ["reason", "tool", "retrieve", "agent", "other"],
+          "default": "other"
+        },
+        "prompt_id": {
+          "type": ["string", "null"],
+          "description": "Identity of the underlying prompt. Multiple spans may share a prompt_id when they execute the same prompt at different steps (e.g. a planner prompt at steps 1, 2, 3). Reflex uses this to aggregate blame and optimize the prompt once across all call sites.",
+          "default": null
+        },
+        "step": {
+          "type": ["integer", "null"],
+          "description": "Logical step index in a plan-act loop (0-based or 1-based, your choice). null for simple linear traces.",
+          "default": null
+        },
+        "optimize": {
+          "type": "boolean",
+          "description": "Mark this span's prompt as a Reflex optimization target. When multiple spans share a prompt_id, set optimize=true on all of them — Reflex updates the prompt once and every span benefits.",
+          "default": false
+        },
+        "tokens": {
+          "type": "integer",
+          "description": "LLM tokens consumed by this span (prompt + completion combined). 0 for non-LLM spans.",
+          "minimum": 0,
+          "default": 0
+        },
+        "started_at": {
+          "type": ["number", "null"],
+          "description": "Unix timestamp (float seconds) when the span began. null if not recorded.",
+          "default": null
+        },
+        "ended_at": {
+          "type": ["number", "null"],
+          "description": "Unix timestamp (float seconds) when the span ended. null if not recorded.",
+          "default": null
+        },
+        "error": {
+          "type": ["string", "null"],
+          "description": "Short error or exception message if the span failed. null on success.",
+          "default": null
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Arbitrary per-span key/value metadata. Well-known keys: 'mcp_server' (string — name of the MCP server for tool spans), 'tool_call_id' (string — LLM tool-use id linking this tool span to the reasoning turn that dispatched it), 'error_code' (string — machine-readable error code), 'latency_ms' (number — wall-clock duration when started_at/ended_at aren't available).",
+          "additionalProperties": true,
+          "default": {}
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "examples": [
+    {
+      "nodes": [
+        {
+          "name": "classify",
+          "id": "n0",
+          "kind": "reason",
+          "input": "I was charged twice — how do I get a refund?",
+          "output": "billing/refund",
+          "tokens": 312
+        },
+        {
+          "name": "retrieve",
+          "id": "n1",
+          "parent_id": "n0",
+          "kind": "tool",
+          "input": { "topic": "billing/refund" },
+          "output": ["refund_policy.md", "billing_faq.md"],
+          "metadata": { "mcp_server": "knowledge_base" }
+        },
+        {
+          "name": "answer",
+          "id": "n2",
+          "kind": "reason",
+          "prompt_id": "answer_v1",
+          "optimize": true,
+          "input": { "question": "I was charged twice — how do I get a refund?", "docs": ["..."] },
+          "output": "You can request a refund within 30 days by contacting support.",
+          "tokens": 891
+        }
+      ],
+      "ideal": "Under our billing policy, duplicate charges are automatically reversed within 3–5 business days. You can also contact support to expedite.",
+      "metadata": { "session_id": "sess_abc123", "model": "claude-sonnet-4-5" }
+    }
+  ]
+}
