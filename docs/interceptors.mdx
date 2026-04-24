@@ -1,0 +1,139 @@
+---
+title: Interceptors
+description: Capture live agent traffic as AgentTrace spans — no decorators required.
+---
+
+Interceptors wrap live objects and record each interaction as it happens.
+Unlike adapters (which parse log files after the fact), interceptors
+sit in the call path and capture spans in real time.
+
+## MCP interceptor
+
+[MCP](https://modelcontextprotocol.io) is the standard protocol for
+agent-tool connectivity. Every `call_tool` invocation has a clean
+input/output boundary — the interceptor captures each one as a
+`KIND_TOOL` span with no changes to your agent code.
+
+### Basic usage
+
+```python
+from mcp import ClientSession
+from aevyra_witness.interceptors import wrap_mcp_session
+
+async with ClientSession(read, write) as session:
+    await session.initialize()
+
+    # Wrap once — use exactly like the original session
+    mcp = wrap_mcp_session(session, server_name="github")
+
+    issue  = await mcp.call_tool("create_issue", {"title": "Bug", "body": "..."})
+    repos  = await mcp.call_tool("list_repos", {})
+    commit = await mcp.call_tool("get_commit", {"sha": "abc123"})
+
+    # All three calls captured
+    trace = mcp.to_trace()
+    print(f"Captured {len(trace.nodes)} spans")
+```
+
+### Attach to a Witness tracer
+
+Combine MCP spans with `@span`-instrumented reasoning steps into a
+single unified trace:
+
+```python
+from aevyra_witness.runtime import span, trace as witness_trace
+from aevyra_witness.interceptors import wrap_mcp_session
+
+@span("plan", optimize=True, prompt_id="planner_v1")
+async def plan(context: str) -> str: ...
+
+async def run_agent(question: str):
+    with witness_trace() as tracer:
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            # Attach tracer — MCP spans are injected automatically
+            mcp = wrap_mcp_session(session, server_name="stripe", tracer=tracer)
+
+            plan_result = await plan(question)
+            charge = await mcp.call_tool("get_charge", {"id": "ch_123"})
+            # ...
+
+    # trace contains both @span and MCP spans in execution order
+    return tracer.finish()
+```
+
+### Multiple servers
+
+Wrap each server separately and merge the node lists:
+
+```python
+from aevyra_witness import AgentTrace
+
+github = wrap_mcp_session(gh_session, server_name="github")
+slack  = wrap_mcp_session(sl_session, server_name="slack")
+stripe = wrap_mcp_session(st_session, server_name="stripe")
+
+# ... run agent ...
+
+trace = AgentTrace(nodes=github.nodes + slack.nodes + stripe.nodes)
+```
+
+### Set a parent span
+
+Wire MCP tool spans as children of a reasoning span in a larger DAG:
+
+```python
+# After capturing the reasoning span's id
+mcp = wrap_mcp_session(
+    session,
+    server_name="github",
+    parent_id="plan_step_1",
+)
+```
+
+### What each span contains
+
+| Field | Value |
+|-------|-------|
+| `name` | Tool name (e.g. `"create_issue"`) |
+| `kind` | `KIND_TOOL` |
+| `input` | The `arguments` dict passed to `call_tool` |
+| `output` | Extracted text from `CallToolResult.content` |
+| `metadata["mcp_server"]` | `server_name` you provided |
+| `started_at` / `ended_at` | Wall-clock timestamps |
+| `metadata["latency_ms"]` | Call duration |
+| `error` | Exception message if the call raised |
+
+### Transparent proxy
+
+The interceptor forwards every non-intercepted attribute to the
+underlying session — `list_tools`, `read_resource`, `get_prompt`, etc.
+all pass through unchanged. You can use it as a drop-in replacement:
+
+```python
+# These work exactly as before
+tools    = await mcp.list_tools()
+resource = await mcp.read_resource("file:///config.json")
+```
+
+### API reference
+
+```python
+from aevyra_witness.interceptors import MCPInterceptor, wrap_mcp_session
+
+# Factory (preferred)
+mcp = wrap_mcp_session(
+    session,
+    server_name="github",   # str — shows up in metadata["mcp_server"]
+    parent_id=None,         # str | None — parent span id for DAG wiring
+    tracer=None,            # Tracer | None — injects spans into an existing tracer
+)
+
+# Access captured spans
+mcp.nodes           # list[TraceNode] — all captured tool call spans
+mcp.to_trace()      # AgentTrace — wraps nodes in a full trace object
+
+# Still a full session proxy
+await mcp.call_tool(name, arguments, **kwargs)
+await mcp.list_tools()
+```
