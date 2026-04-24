@@ -36,6 +36,8 @@ dependencies = []
 dev = [
     "pytest>=9.0.3",
     "ruff>=0.4",
+    "bandit[toml]>=1.7",
+    "detect-secrets>=1.5",
 ]
 
 [tool.setuptools.packages.find]

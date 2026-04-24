@@ -21,6 +21,7 @@ from aevyra_witness import AgentTrace, TraceNode
 # TraceNode
 # ---------------------------------------------------------------------------
 
+
 class TestTraceNode:
     def test_defaults(self):
         n = TraceNode("classify", input="hi", output="greeting")
@@ -73,6 +74,7 @@ class TestTraceNode:
 # ---------------------------------------------------------------------------
 # AgentTrace
 # ---------------------------------------------------------------------------
+
 
 class TestAgentTrace:
     def _sample(self) -> AgentTrace:
@@ -137,9 +139,7 @@ class TestAgentTrace:
         assert "Node 1 — classify  [optimize]" not in text
 
     def test_to_trace_text_renders_dicts_as_json(self):
-        t = AgentTrace(
-            nodes=[TraceNode("n", input={"a": 1, "b": 2}, output=None)]
-        )
+        t = AgentTrace(nodes=[TraceNode("n", input={"a": 1, "b": 2}, output=None)])
         text = t.to_trace_text()
         assert '{"a":1,"b":2}' in text
 
@@ -204,6 +204,7 @@ class TestAgentTrace:
 # ---------------------------------------------------------------------------
 # Package surface
 # ---------------------------------------------------------------------------
+
 
 def test_public_imports():
     import aevyra_witness as w

@@ -125,9 +125,7 @@ class Tracer:
 
     def _add_node(self, node: TraceNode) -> None:
         if self._finished is not None:
-            raise RuntimeError(
-                "cannot add a span after Tracer.finish() — trace is sealed"
-            )
+            raise RuntimeError("cannot add a span after Tracer.finish() — trace is sealed")
         self._nodes.append(node)
 
     # -- Public API --------------------------------------------------------

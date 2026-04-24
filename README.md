@@ -1,5 +1,8 @@
 # aevyra-witness
 
+[![CI](https://github.com/aevyraai/witness/actions/workflows/ci.yml/badge.svg)](https://github.com/aevyraai/witness/actions/workflows/ci.yml)
+[![Security](https://github.com/aevyraai/witness/actions/workflows/security.yml/badge.svg)](https://github.com/aevyraai/witness/actions/workflows/security.yml)
+
 **The record of what happened during an agent run.**
 
 Witness is the shared trace primitive for the [Aevyra](https://aevyra.ai) stack.
