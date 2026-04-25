@@ -1,0 +1,142 @@
+---
+title: Adapters
+description: Import existing agent logs into AgentTrace — without changing any agent code.
+---
+
+Adapters convert existing telemetry formats into an `AgentTrace`.
+Use them when your agent already emits logs and you don't want to add
+`@span` decorators, or when you're working with a framework you don't
+control (LangGraph, CrewAI, AutoGen, OpenClaw, etc.).
+
+## OpenClaw JSONL
+
+[OpenClaw](https://github.com/openclaw/openclaw) streams telemetry as
+newline-delimited JSON. The adapter handles LLM turns, MCP tool calls,
+agent lifecycle events, and start/end event pairing:
+
+```python
+from pathlib import Path
+from aevyra_witness.adapters import from_openclaw_jsonl
+
+lines = Path("run.jsonl").read_text().splitlines()
+trace = from_openclaw_jsonl(lines)
+```
+
+Pass pre-parsed dicts instead of strings if you already have them:
+
+```python
+import json
+events = [json.loads(line) for line in lines if line.strip()]
+trace = from_openclaw_jsonl(events)
+```
+
+**Mark prompts for Reflex** — tell the adapter which prompt ids to mark
+as optimization targets, or let it pick up `"optimize": true` events
+directly from the stream:
+
+```python
+trace = from_openclaw_jsonl(
+    lines,
+    optimize_prompt_ids=["planner_v1", "responder_v2"],
+    ideal="The correct answer is ...",
+    trace_metadata={"session_id": "sess_abc123"},
+)
+```
+
+**Event types recognised** — the adapter handles multiple OpenClaw
+versions and their evolving event names:
+
+| Family | Recognised event types |
+|--------|------------------------|
+| LLM turns | `llm.request`, `llm.response`, `llm_turn`, `reason`, `plan`, `respond` |
+| Tool calls | `tool.call`, `tool_call`, `mcp.call`, any type containing `tool` |
+| Agent / Task Brain | `agent.start`, `agent.finish`, `task.*`, `cron.*`, `acp.*` |
+
+Unknown event types are skipped with a debug log — a single malformed
+event never aborts the import.
+
+**Start/end pairing** — OpenClaw can emit paired `*.start` / `*.end`
+events sharing a `span_id`. The adapter merges them automatically into
+single completed spans. Unmatched starts are surfaced with an `error`
+field so Origin can reason about truncated runs.
+
+## OpenTelemetry
+
+The OTel adapter converts any OpenTelemetry spans — from the Python SDK,
+OTLP JSON export, or any framework using the
+[GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) —
+into an `AgentTrace`.
+
+**Supported frameworks** (any that emit OTel GenAI spans):
+- LangGraph / LangChain (via `opentelemetry-instrumentation-langchain`)
+- CrewAI (built-in OTel export)
+- AutoGen / Microsoft Agent Framework
+- Vercel AI SDK (TypeScript, via OTLP HTTP export)
+- OpenClaw (`diagnostics.otel.logs` path)
+- Any custom framework emitting `gen_ai.*` attributes
+
+### From the Python SDK
+
+```python
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from aevyra_witness.adapters import from_otel_spans
+
+exporter = InMemorySpanExporter()
+provider = TracerProvider()
+provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+# ... run your LangGraph / CrewAI / AutoGen agent ...
+
+spans = exporter.get_finished_spans()
+trace = from_otel_spans(spans)
+```
+
+### From OTLP JSON export
+
+If you're collecting spans from a non-Python service (TypeScript, Go,
+etc.) via an OTLP collector that writes JSON:
+
+```python
+import json
+from pathlib import Path
+from aevyra_witness.adapters import from_otel_spans
+
+spans = json.loads(Path("spans.json").read_text())
+trace = from_otel_spans(spans)
+```
+
+### Attribute mapping
+
+The adapter reads the
+[OTel GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/):
+
+| OTel attribute | TraceNode field |
+|----------------|-----------------|
+| `gen_ai.operation.name` | `kind` classification |
+| `gen_ai.request.model` | `metadata["model"]` |
+| `gen_ai.usage.input_tokens` | `tokens` (partial) |
+| `gen_ai.usage.output_tokens` | `tokens` (partial) |
+| `gen_ai.content.prompt` event | `input` |
+| `gen_ai.content.completion` event | `output` |
+| `gen_ai.tool.name` | `name` (KIND_TOOL) |
+| `mcp.server.name` | `metadata["mcp_server"]` |
+| `error.type` / `exception.message` | `error` |
+
+**Span classification:**
+- `gen_ai.operation.name` in `{chat, text_completion, completions}` → `KIND_REASON`
+- `gen_ai.tool.name` present, or name starts with `mcp.` → `KIND_TOOL`
+- `gen_ai.system` present without a tool → `KIND_REASON`
+- Everything else → `KIND_OTHER`
+
+### Optional parameters
+
+```python
+trace = from_otel_spans(
+    spans,
+    optimize_prompt_ids=["planner_v1"],   # mark these prompts for Reflex
+    ideal="Expected answer ...",
+    trace_metadata={"run_id": "run_001"},
+)
+```
