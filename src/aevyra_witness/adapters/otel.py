@@ -292,11 +292,7 @@ def _span_to_node(s: dict[str, Any], targets: set[str]) -> TraceNode | None:
     # Residual metadata — keep useful non-standard keys
     metadata = _extract_metadata(attrs)
     if kind == KIND_TOOL:
-        server = (
-            attrs.get("mcp.server.name")
-            or attrs.get("server.address")
-            or None
-        )
+        server = attrs.get("mcp.server.name") or attrs.get("server.address") or None
         if server:
             metadata[META_MCP_SERVER] = server
         tcid = attrs.get("gen_ai.tool.call.id") or attrs.get("tool_call_id")
@@ -435,17 +431,34 @@ def _extract_error(s: dict[str, Any], attrs: dict[str, Any]) -> str | None:
 
 
 # Well-known OTel keys that map to TraceNode fields — strip from metadata.
-_CONSUMED_ATTRS = frozenset({
-    "gen_ai.system", "gen_ai.request.model", "gen_ai.operation.name",
-    "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens",
-    "gen_ai.usage.prompt_tokens", "gen_ai.usage.completion_tokens",
-    "gen_ai.prompt", "gen_ai.completion", "gen_ai.tool.name",
-    "gen_ai.tool.parameters", "gen_ai.tool.result", "gen_ai.tool.call.id",
-    "gen_ai.prompt.id", "llm.prompts", "llm.completions",
-    "llm.prompt_template.template", "mcp.server.name",
-    "error.type", "tool.parameters", "tool.result", "tool_call_id",
-    "prompt_id", "optimize",
-})
+_CONSUMED_ATTRS = frozenset(
+    {
+        "gen_ai.system",
+        "gen_ai.request.model",
+        "gen_ai.operation.name",
+        "gen_ai.usage.input_tokens",
+        "gen_ai.usage.output_tokens",
+        "gen_ai.usage.prompt_tokens",
+        "gen_ai.usage.completion_tokens",
+        "gen_ai.prompt",
+        "gen_ai.completion",
+        "gen_ai.tool.name",
+        "gen_ai.tool.parameters",
+        "gen_ai.tool.result",
+        "gen_ai.tool.call.id",
+        "gen_ai.prompt.id",
+        "llm.prompts",
+        "llm.completions",
+        "llm.prompt_template.template",
+        "mcp.server.name",
+        "error.type",
+        "tool.parameters",
+        "tool.result",
+        "tool_call_id",
+        "prompt_id",
+        "optimize",
+    }
+)
 
 
 def _extract_metadata(attrs: dict[str, Any]) -> dict[str, Any]:
