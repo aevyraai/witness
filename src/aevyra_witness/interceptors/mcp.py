@@ -192,10 +192,7 @@ class MCPInterceptor:
         return getattr(self._session, name)
 
     def __repr__(self) -> str:
-        return (
-            f"MCPInterceptor(server={self._server_name!r}, "
-            f"calls={len(self.nodes)})"
-        )
+        return f"MCPInterceptor(server={self._server_name!r}, calls={len(self.nodes)})"
 
 
 def wrap_mcp_session(
