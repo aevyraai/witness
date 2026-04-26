@@ -3,18 +3,22 @@
 [![CI](https://github.com/aevyraai/witness/actions/workflows/ci.yml/badge.svg)](https://github.com/aevyraai/witness/actions/workflows/ci.yml)
 [![Security](https://github.com/aevyraai/witness/actions/workflows/security.yml/badge.svg)](https://github.com/aevyraai/witness/actions/workflows/security.yml)
 
-**The record of what happened during an agent run.**
+When an AI agent gives a wrong answer, which step caused it? The LLM call that
+misread the context? The tool that returned stale data? The retrieval that pulled
+the wrong docs? Without a structured record of what actually ran, you're guessing.
 
-Witness is the shared trace primitive for the [Aevyra](https://aevyra.ai) stack.
-It is a tiny, dependency-free package that defines one thing well: `AgentTrace`,
-the structured record of an agent pipeline's execution — every span, its input,
-its output, its place in the DAG, and which prompt(s) are the optimization
-target. A small **runtime** layer (`@span` + `trace()`) captures an `AgentTrace`
-automatically from a live pipeline when you don't want to build one by hand.
+Witness records every step of an agent pipeline — its inputs, outputs, timing,
+and how the steps relate to each other — in a single structured object called
+an `AgentTrace`. Add two decorators to your code and Witness does the rest.
+That trace is then ready to hand to [Origin](https://github.com/aevyraai/origin)
+for failure attribution, [Verdict](https://github.com/aevyraai/verdict) for
+scoring, or [Reflex](https://github.com/aevyraai/reflex) for prompt optimization.
 
-Reflex, Origin, Verdict, and any future Aevyra tool all consume the same
-`AgentTrace`. That's the whole point: one canonical shape, so the optimizer,
-the diagnoser, and the viewer never disagree about what a run looked like.
+## Use cases
+
+- **Debugging a failing agent** — see exactly which step produced the bad output, what it received as input, and what it returned, without adding print statements everywhere.
+- **Attributing failures across a multi-step pipeline** — when a plan-act-respond loop fails, know whether the planner, a tool call, or the final response step was responsible.
+- **Feeding evaluation and optimization tools** — pass the same trace to a judge that scores it, a diagnoser that finds the root cause, and an optimizer that fixes the prompt — all without reformatting your data.
 
 ```
 Witness  →  captures what happened
@@ -22,6 +26,9 @@ Verdict  →  judges it
 Origin   →  finds where it went wrong
 Reflex   →  fixes it
 ```
+
+Zero runtime dependencies. Works with any LLM framework. Non-Python users can emit
+traces as JSON directly — see the [schema spec](schema/README.md).
 
 ## Install
 
@@ -104,6 +111,37 @@ def run_pipeline(prompt: str, ticket: str) -> AgentTrace:
         ideal=expected_response,
     )
 ```
+
+## Quick start (non-Python)
+
+The trace format is plain JSON — any language can produce it without installing
+this library. Write a conforming object and save it to a file; the
+[Origin CLI](https://github.com/aevyraai/origin) will take it from there.
+
+```typescript
+// TypeScript / JavaScript
+import { writeFileSync } from "fs";
+
+const trace = {
+  nodes: [
+    { name: "classify", kind: "reason", input: userMessage, output: category },
+    { name: "lookup",   kind: "tool",   input: { id },      output: result,
+      metadata: { mcp_server: "stripe" } },
+    { name: "answer",   kind: "reason", input: prompt,      output: reply },
+  ],
+  metadata: { session_id: sessionId },
+};
+
+writeFileSync("trace.json", JSON.stringify(trace, null, 2));
+```
+
+```bash
+# Then run attribution with the Origin CLI (Python, one-time install)
+pip install aevyra-origin[anthropic]
+aevyra-origin diagnose trace.json --score 0.2 --rubric rubric.txt
+```
+
+For Go, Java, and full field reference see the [schema spec](schema/README.md).
 
 ## Complex usage (N-step plan-act with M-parallel tools)
 
