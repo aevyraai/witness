@@ -1,0 +1,163 @@
+---
+title: Trace schema
+description: AgentTrace and TraceNode field reference.
+---
+
+## AgentTrace
+
+The top-level container for a complete agent execution.
+
+```python
+from aevyra_witness import AgentTrace, TraceNode
+
+trace = AgentTrace(
+    nodes=[...],        # list[TraceNode], required
+    ideal=None,         # str | None — expected/reference output
+    metadata={},        # dict — arbitrary trace-level metadata
+)
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `nodes` | `list[TraceNode]` | Ordered list of spans in execution order. DAG structure is encoded via `parent_id`. |
+| `ideal` | `str \| None` | Expected or reference output for the run. Optional — used by ablation's `placeholder="ideal"` strategy and by judges that compare against a known-good answer. |
+| `metadata` | `dict` | Arbitrary key/value metadata for the trace (e.g. `session_id`, `model_name`, `pipeline_version`). |
+
+### Methods
+
+```python
+trace.to_dict()                     # dict — JSON-serializable
+trace.to_json(indent=2)             # str — JSON string
+AgentTrace.from_dict(d)             # classmethod — reconstruct from dict
+trace.to_trace_text()               # str — human-readable rendering for LLMs
+trace.by_id(span_id)                # TraceNode | None — look up a node by id
+```
+
+### Serialisation
+
+```python
+import json
+from pathlib import Path
+
+# Save
+Path("trace.json").write_text(trace.to_json(indent=2))
+
+# Load
+trace2 = AgentTrace.from_dict(json.loads(Path("trace.json").read_text()))
+```
+
+---
+
+## TraceNode
+
+One span in the execution trace.
+
+```python
+TraceNode(
+    name="classify",           # str, required
+    input=ticket,              # any JSON-serializable value
+    output="billing/refund",   # any JSON-serializable value
+    id="n0",                   # str — unique within this trace
+    parent_id=None,            # str | None — id of parent span
+    kind="reason",             # str — KIND_REASON, KIND_TOOL, etc.
+    prompt_id="classifier_v1", # str | None — prompt identity for Reflex
+    step=1,                    # int | None — step index in a plan-act loop
+    optimize=True,             # bool — mark this prompt for Reflex
+    tokens=312,                # int — LLM tokens for this span
+    started_at=1714000000.0,   # float | None — Unix timestamp
+    ended_at=1714000000.4,     # float | None — Unix timestamp
+    error=None,                # str | None — error message on failure
+    metadata={},               # dict — arbitrary per-span metadata
+)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `str` | required | Human-readable span name. Not required to be unique — use `id` for stable identity. |
+| `input` | `Any` | `None` | The span's input. Any JSON-serializable value. |
+| `output` | `Any` | `None` | The span's output. Any JSON-serializable value. |
+| `id` | `str` | `""` | Unique identifier within this trace. Auto-assigned as `n0`, `n1`, … if left empty. Required when using `parent_id` wiring. |
+| `parent_id` | `str \| None` | `None` | `id` of the parent span. `None` means this is a root span. Parallel siblings share the same `parent_id`. |
+| `kind` | `str` | `"other"` | Span kind — see [Span kinds](#span-kinds) below. |
+| `prompt_id` | `str \| None` | `None` | Identity of the underlying prompt. Multiple spans may share a `prompt_id` (e.g. the planner prompt at each reasoning step). Reflex uses this to optimize the prompt once and have the update apply to every call site. |
+| `step` | `int \| None` | `None` | Logical step index in a plan-act loop. `None` for simple linear traces. |
+| `optimize` | `bool` | `False` | Mark this span's prompt as a Reflex optimization target. When multiple spans share a `prompt_id`, set `optimize=True` on all of them. |
+| `tokens` | `int` | `0` | LLM tokens consumed (prompt + completion combined). `0` for non-LLM spans. |
+| `started_at` | `float \| None` | `None` | Unix timestamp (seconds) when the span began. |
+| `ended_at` | `float \| None` | `None` | Unix timestamp (seconds) when the span ended. |
+| `error` | `str \| None` | `None` | Short error message if the span failed. `None` on success. |
+| `metadata` | `dict` | `{}` | Arbitrary per-span key/value metadata. See [Well-known metadata keys](#well-known-metadata-keys). |
+
+### Span kinds
+
+| Constant | String value | When to use |
+|----------|-------------|-------------|
+| `KIND_REASON` | `"reason"` | An LLM reasoning or planning step |
+| `KIND_TOOL` | `"tool"` | A tool or function call (native or MCP) |
+| `KIND_RETRIEVE` | `"retrieve"` | A retrieval or memory lookup |
+| `KIND_AGENT` | `"agent"` | A nested sub-agent invocation |
+| `KIND_OTHER` | `"other"` | Anything else / unspecified |
+
+Custom kind strings are allowed — downstream tools render them generically.
+
+### Well-known metadata keys
+
+| Key | Constant | Description |
+|-----|----------|-------------|
+| `"mcp_server"` | `META_MCP_SERVER` | Name of the MCP server that exposed this tool (e.g. `"github"`, `"slack"`). Signals "this is an MCP tool call". |
+| `"tool_call_id"` | `META_TOOL_CALL_ID` | The LLM's `tool_use` id, linking this tool span to the reasoning turn that dispatched it. |
+| `"error_code"` | `META_ERROR_CODE` | Machine-readable error code from a failed tool call. |
+| `"latency_ms"` | `META_LATENCY_MS` | Wall-clock duration in milliseconds, when `started_at`/`ended_at` aren't available. |
+
+### Factory: `TraceNode.mcp_tool()`
+
+Convenience constructor for MCP tool spans — pins the metadata
+conventions so Origin and dashboards render them consistently:
+
+```python
+node = TraceNode.mcp_tool(
+    "GMAIL_SEND_EMAIL",
+    arguments={"to": "alice@example.com", "subject": "Hi"},
+    result={"message_id": "msg_abc"},
+    server="gmail",
+    tool_call_id="toolu_01ABC",
+    parent_id="plan_step_1",
+    latency_ms=420,
+)
+```
+
+---
+
+## DAG wiring examples
+
+**Linear pipeline** — no `parent_id` needed:
+
+```python
+AgentTrace(nodes=[
+    TraceNode("classify", input=ticket,    output="billing"),
+    TraceNode("retrieve", input="billing", output=policy_docs),
+    TraceNode("answer",   input=ticket,    output=reply, optimize=True),
+])
+```
+
+**Plan-act with parallel tool calls:**
+
+```python
+AgentTrace(nodes=[
+    TraceNode("plan", id="p1", kind=KIND_REASON, prompt_id="planner",
+              step=1, input=query, output=plan1, optimize=True),
+    TraceNode("stripe_lookup", id="t1a", kind=KIND_TOOL, parent_id="p1",
+              input={"charge_id": "ch_123"}, output={...}),
+    TraceNode("kb_search",     id="t1b", kind=KIND_TOOL, parent_id="p1",
+              input={"query": "refund policy"}, output=[...]),
+
+    TraceNode("plan", id="p2", kind=KIND_REASON, prompt_id="planner",
+              step=2, input=step1_context, output=plan2, optimize=True),
+    TraceNode("respond", id="r", kind=KIND_REASON, prompt_id="responder",
+              step=3, input=final_context, output=final_reply),
+])
+```
+
+Both `p1` and `p2` carry `prompt_id="planner"` and `optimize=True`.
+Reflex will optimize the single planner prompt and the update applies
+to every step.

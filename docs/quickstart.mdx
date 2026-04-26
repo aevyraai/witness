@@ -1,0 +1,137 @@
+---
+title: Quick start
+description: Instrument a pipeline and get your first AgentTrace in under 2 minutes.
+---
+
+## Install
+
+```bash
+pip install aevyra-witness
+```
+
+No extra dependencies. No API keys. Works with any Python 3.10+ project.
+
+## Option 1 — Instrument with `@span`
+
+Add `@span` decorators to the functions you want to trace. Each
+decorated function becomes one span in the captured trace:
+
+```python
+from aevyra_witness.runtime import span, trace
+
+@span("classify")
+def classify(ticket: str) -> str:
+    return "billing/refund"
+
+@span("search_kb", optimize=True, prompt_id="kb_search_v2")
+def search_kb(topic: str) -> list[str]:
+    return ["refund_policy.md", "billing_faq.md"]
+
+@span("answer", optimize=True, prompt_id="answer_v1")
+def answer(question: str, docs: list[str]) -> str:
+    return "You can request a refund within 30 days by contacting support."
+
+def my_agent(question: str) -> str:
+    topic = classify(question)
+    docs  = search_kb(topic)
+    return answer(question, docs)
+
+# Run under a tracer to capture the execution
+with trace() as tracer:
+    output = my_agent("I was charged twice — how do I get a refund?")
+
+captured: AgentTrace = tracer.finish()
+print(captured.to_trace_text())
+```
+
+The tracer automatically captures each span's input, output, and timing.
+No changes to function signatures required.
+
+## Option 2 — Adapt existing logs
+
+If your agent already emits OpenClaw JSONL or OpenTelemetry spans, skip
+the decorators and parse the logs directly:
+
+```python
+from aevyra_witness.adapters import from_openclaw_jsonl, from_otel_spans
+from pathlib import Path
+
+# OpenClaw JSONL
+trace = from_openclaw_jsonl(Path("run.jsonl").read_text().splitlines())
+
+# OpenTelemetry (Python SDK, OTLP JSON, or any gen_ai.* framework)
+trace = from_otel_spans(otel_exporter.get_finished_spans())
+```
+
+## Option 3 — Intercept MCP sessions
+
+Wrap an MCP `ClientSession` to auto-capture every tool call:
+
+```python
+from mcp import ClientSession
+from aevyra_witness.interceptors import wrap_mcp_session
+
+async with ClientSession(read, write) as session:
+    await session.initialize()
+    mcp = wrap_mcp_session(session, server_name="stripe")
+
+    charge   = await mcp.call_tool("get_charge", {"id": "ch_123"})
+    customer = await mcp.call_tool("get_customer", {"id": "cus_abc"})
+
+    trace = mcp.to_trace()
+```
+
+## Inspect the trace
+
+```python
+from aevyra_witness import AgentTrace
+
+# Human-readable rendering
+print(trace.to_trace_text())
+
+# Count spans by kind
+for node in trace.nodes:
+    print(f"{node.id}  {node.kind:<10}  {node.name}")
+
+# Serialise — pass to Origin, save to disk, ship over HTTP
+import json
+Path("trace.json").write_text(trace.to_json(indent=2))
+
+# Deserialise
+trace2 = AgentTrace.from_dict(json.loads(Path("trace.json").read_text()))
+```
+
+## Mark spans for Reflex
+
+Set `optimize=True` and a `prompt_id` on any span whose prompt you want
+Reflex to improve. Spans sharing the same `prompt_id` are treated as
+instances of the same prompt across steps:
+
+```python
+@span("plan", optimize=True, prompt_id="planner_v1")
+def plan(context: str) -> str: ...
+```
+
+Or set it directly on the node when using adapters:
+
+```python
+trace.nodes[0].optimize = True
+trace.nodes[0].prompt_id = "planner_v1"
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Adapters" icon="plug" href="/witness/adapters">
+    Import OpenClaw JSONL and OTel spans
+  </Card>
+  <Card title="MCP interceptor" icon="network-wired" href="/witness/interceptors">
+    Auto-capture MCP tool calls
+  </Card>
+  <Card title="Trace schema" icon="brackets-curly" href="/witness/api/trace">
+    Full AgentTrace and TraceNode field reference
+  </Card>
+  <Card title="Origin" icon="magnifying-glass" href="/origin/introduction">
+    Feed your trace to Origin for failure attribution
+  </Card>
+</CardGroup>
