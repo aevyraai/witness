@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   security-events: write  # required to upload SARIF results to the Security tab
+  actions: read           # required for CodeQL to gather workflow telemetry
 
 jobs:
   # ---------------------------------------------------------------------------
