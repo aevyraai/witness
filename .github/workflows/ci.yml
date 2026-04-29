@@ -35,18 +35,22 @@ jobs:
         run: ruff check .
 
   # ---------------------------------------------------------------------------
-  # Unit tests — no API keys or external services needed
+  # Unit tests — matrix across min and latest stable Python
   # ---------------------------------------------------------------------------
   unit:
-    name: Unit tests
+    name: Unit tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
 
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install package
