@@ -9,10 +9,11 @@ the wrong docs? Without a structured record of what actually ran, you're guessin
 
 Witness records every step of an agent pipeline — its inputs, outputs, timing,
 and how the steps relate to each other — in a single structured object called
-an `AgentTrace`. Add two decorators to your code and Witness does the rest.
-That trace is then ready to hand to [Origin](https://github.com/aevyraai/origin)
-for failure attribution, [Verdict](https://github.com/aevyraai/verdict) for
-scoring, or [Reflex](https://github.com/aevyraai/reflex) for prompt optimization.
+an `AgentTrace`. Add `@span` to each function you want to instrument, wrap the
+run in `trace()`, and Witness does the rest. That trace is then ready to hand
+to [Origin](https://github.com/aevyraai/origin) for failure attribution,
+[Verdict](https://github.com/aevyraai/verdict) for scoring, or
+[Reflex](https://github.com/aevyraai/reflex) for prompt optimization.
 
 ## Use cases
 
@@ -36,13 +37,62 @@ traces as JSON directly — see the [schema spec](schema/README.md).
 pip install aevyra-witness
 ```
 
-Zero runtime dependencies. Python 3.10+.
+Python 3.10+.
+
+## Quick start (manual AgentTrace)
+
+The simplest way to build a trace is to construct it directly. Run your
+pipeline, collect the inputs and outputs, and wrap them in an `AgentTrace`:
+
+```python
+from aevyra_witness import AgentTrace, TraceNode
+
+def run_pipeline(prompt: str, ticket: str) -> AgentTrace:
+    ticket_type = classify_ticket(ticket)
+    policy      = retrieve_policy(ticket_type)
+    response    = generate_response(ticket, ticket_type, policy, prompt)
+
+    return AgentTrace(
+        nodes=[
+            TraceNode("classify_ticket",   input=ticket,      output=ticket_type),
+            TraceNode("retrieve_policy",   input=ticket_type, output=policy),
+            TraceNode("generate_response", input=ticket,      output=response,
+                      optimize=True),
+        ],
+        ideal=expected_response,
+    )
+```
+
+That trace is a plain Python object — no I/O, no side effects. Call
+`at.to_trace_text()` to see what a judge or critic will read:
+
+```
+=== AGENT TRACE ===
+
+Node 1 — classify_ticket
+  Input:  billing dispute on invoice #4821
+  Output: billing
+
+Node 2 — retrieve_policy
+  Input:  billing
+  Output: Refund requests must be submitted within 30 days of the
+          invoice date. Disputes after that window require manager approval.
+
+Node 3 — generate_response  [optimize]
+  Input:  billing dispute on invoice #4821
+  Output: I can help with your billing dispute. Our policy requires
+          disputes to be submitted within 30 days of the invoice date...
+```
+
+`[optimize]` marks the span whose prompt Reflex will rewrite if the trace
+scores poorly. Pass the trace to Origin to find out *which* span caused the
+failure before asking Reflex to fix anything.
 
 ## Quick start (live capture)
 
-The runtime turns any instrumented pipeline into an `AgentTrace` with no
-manual wiring. Decorate your nodes with `@span`, wrap the run in
-`trace()`, and ask the tracer for the finished trace:
+The runtime instruments your existing functions without changing their
+signatures. Add `@span` to each node you want to track, wrap the run in
+`trace()`, and call `t.finish()` for the completed `AgentTrace`:
 
 ```python
 from aevyra_witness.runtime import span, trace
@@ -67,9 +117,8 @@ with trace(ideal="your refund will post in 3–5 business days") as t:
     my_agent("how do I refund?")
 at = t.finish()
 
-# at is an AgentTrace with three spans, `answer` parented under the root
-# call stack, input/output/timing captured, ready to hand to Verdict or
-# Origin.
+# at is an AgentTrace with three spans, input/output/timing captured,
+# ready to hand to Verdict or Origin.
 ```
 
 `span` doubles as a context manager for places where a decorator doesn't
@@ -91,27 +140,6 @@ forcing every caller to adopt the tracer.
 `await` via `contextvars`, and records exceptions with `error = repr(exc)`
 without swallowing them.
 
-## Quick start (manual AgentTrace)
-
-```python
-from aevyra_witness import AgentTrace, TraceNode
-
-def run_pipeline(prompt: str, ticket: str) -> AgentTrace:
-    ticket_type = classify_ticket(ticket)
-    policy      = retrieve_policy(ticket_type)
-    response    = generate_response(ticket, ticket_type, policy, prompt)
-
-    return AgentTrace(
-        nodes=[
-            TraceNode("classify_ticket",   input=ticket,      output=ticket_type),
-            TraceNode("retrieve_policy",   input=ticket_type, output=policy),
-            TraceNode("generate_response", input=ticket,      output=response,
-                      optimize=True),
-        ],
-        ideal=expected_response,
-    )
-```
-
 ## Quick start (non-Python)
 
 The trace format is plain JSON — any language can produce it without installing
@@ -129,6 +157,7 @@ const trace = {
       metadata: { mcp_server: "stripe" } },
     { name: "answer",   kind: "reason", input: prompt,      output: reply },
   ],
+  ideal: expectedAnswer,
   metadata: { session_id: sessionId },
 };
 
@@ -178,6 +207,95 @@ trace = AgentTrace(nodes=[
 Both `p1` and `p2` carry `prompt_id="planner"` and `optimize=True` — they're
 the same prompt fired at two steps. Reflex updates the planner prompt **once**
 and both call sites benefit. `trace.optimize_prompt_ids` returns `["planner"]`.
+
+## Integrations
+
+Already have traces from another system? Witness ships adapters that convert
+external formats into `AgentTrace` in one call — no re-instrumentation needed.
+
+### OpenTelemetry (LangGraph, CrewAI, AutoGen, Vercel AI SDK)
+
+Any framework that emits [OpenTelemetry](https://github.com/open-telemetry/opentelemetry-python)
+spans with the [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+works out of the box. Pass the finished spans to `from_otel_spans`:
+
+```python
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from aevyra_witness.adapters import from_otel_spans
+
+exporter = InMemorySpanExporter()
+# ... configure your OTel TracerProvider with this exporter, run your agent ...
+spans = exporter.get_finished_spans()
+trace = from_otel_spans(spans)
+```
+
+Plain dicts from an OTLP JSON export are also accepted.
+
+### OpenClaw
+
+[OpenClaw](https://github.com/openclaw/openclaw) streams telemetry as JSONL —
+one event per line. Pass the lines (strings or pre-parsed dicts) directly:
+
+```python
+from pathlib import Path
+from aevyra_witness.adapters import from_openclaw_jsonl
+
+lines = Path("run_2026_04_21.jsonl").read_text().splitlines()
+trace = from_openclaw_jsonl(lines, ideal="expected output")
+```
+
+The adapter handles paired start/end events, auto-wires tool calls back to the
+reasoning turn that dispatched them via `tool_call_id`, and recognises all
+OpenClaw event families including Task Brain (`task.*`, `cron.*`, `acp.*`).
+
+To mark specific prompts as Reflex optimization targets without annotating the
+event stream:
+
+```python
+trace = from_openclaw_jsonl(lines, optimize_prompt_ids=["planner", "responder"])
+```
+
+### MCP sessions
+
+The MCP interceptor wraps any `ClientSession` and records every `call_tool`
+invocation as a `TraceNode` automatically — no `@span` decorators needed in
+agent code:
+
+```python
+from mcp import ClientSession
+from aevyra_witness.interceptors.mcp import wrap_mcp_session
+
+async with ClientSession(read, write) as session:
+    await session.initialize()
+    mcp = wrap_mcp_session(session, server_name="github")
+
+    result = await mcp.call_tool("create_issue", {"title": "Bug"})
+    result = await mcp.call_tool("list_repos", {})
+
+    trace = mcp.to_trace()  # AgentTrace with all captured spans
+```
+
+To record MCP calls alongside `@span`-instrumented functions, pass the active
+tracer so the spans land in the same trace:
+
+```python
+from aevyra_witness.runtime import trace as witness_trace
+
+with witness_trace() as t:
+    mcp = wrap_mcp_session(session, server_name="slack", tracer=t)
+    await mcp.call_tool("post_message", {...})
+
+at = t.finish()  # includes both @span spans and MCP calls
+```
+
+### Bring your own format
+
+If you control the producer (TypeScript, Go, Rust), the simplest path is to
+emit a JSON file that matches the `AgentTrace` schema and run the Origin CLI
+against it — see [Quick start (non-Python)](#quick-start-non-python) above.
+For structured logs from Langfuse, LangSmith, or a home-grown JSONL store, the
+[Origin BYO trace tutorial](https://github.com/aevyraai/origin/tree/main/examples/byo_trace)
+shows a 30-line adapter pattern that works for any source format.
 
 ## What's in the box
 
@@ -230,11 +348,19 @@ Tool calls (including MCP):
 
 Adapters:
 
-- `aevyra_witness.adapters.from_openclaw_jsonl(lines)` — import an
-  [OpenClaw](https://github.com/openclaw/openclaw) JSONL telemetry stream
-  (LLM turns, tool calls, MCP calls, agent lifecycle) into an
-  `AgentTrace`. Auto-wires tool calls back to their reasoning parent
-  via `tool_call_id`.
+- `from_openclaw_jsonl(lines)` — convert an
+  [OpenClaw](https://github.com/openclaw/openclaw) JSONL event stream into an
+  `AgentTrace`. Handles start/end pairing, auto-parents tool calls via
+  `tool_call_id`, and covers Task Brain event families.
+- `from_otel_spans(spans)` — convert OpenTelemetry `ReadableSpan` objects or
+  OTLP JSON dicts into an `AgentTrace`. Works with LangGraph, CrewAI, AutoGen,
+  Vercel AI SDK, and any framework emitting the GenAI semantic conventions.
+
+Interceptors:
+
+- `wrap_mcp_session(session, server_name=...)` — wrap any MCP `ClientSession`
+  to record every `call_tool` invocation as a `TraceNode`, with no decorators
+  needed in agent code.
 
 No LLM calls, no HTTP, no optimizer. Just the schema.
 
