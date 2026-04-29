@@ -231,7 +231,7 @@ Tool calls (including MCP):
 Adapters:
 
 - `aevyra_witness.adapters.from_openclaw_jsonl(lines)` — import an
-  [OpenClaw](https://github.com/openclaw-ai) JSONL telemetry stream
+  [OpenClaw](https://github.com/openclaw/openclaw) JSONL telemetry stream
   (LLM turns, tool calls, MCP calls, agent lifecycle) into an
   `AgentTrace`. Auto-wires tool calls back to their reasoning parent
   via `tool_call_id`.

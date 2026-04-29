@@ -21,7 +21,7 @@ This adapter converts those events into a Witness :class:`AgentTrace`
 that the rest of the Aevyra stack (Verdict, Origin, Reflex) can consume
 directly.
 
-.. _OpenClaw: https://github.com/openclaw-ai
+.. _OpenClaw: https://github.com/openclaw/openclaw
 
 Event shape assumed
 -------------------
@@ -120,8 +120,9 @@ _TYPE_KEYS = ("type", "event", "event_type", "name")
 # matching and survives OpenClaw's event-name churn.
 _LLM_FRAGMENTS = ("llm", "reason", "plan", "respond")
 _TOOL_FRAGMENTS = ("tool", "mcp.call", "mcp_call")
-_AGENT_FRAGMENTS = ("agent.",)  # "agent.start", "agent.finish"; avoid matching
-# a user-named "research_agent" tool
+_AGENT_FRAGMENTS = ("agent.", "sub_agent")  # "agent.start", "agent.finish",
+# "sub_agent"; the dot in "agent." avoids matching a user-named "research_agent"
+# tool, and "sub_agent" is listed explicitly for the same reason
 
 # Task Brain (OpenClaw ≥ 2026.3.31) unified ACP, subagents, cron tasks,
 # and background CLI processes onto a SQLite-backed task ledger. The new
