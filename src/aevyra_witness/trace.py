@@ -524,6 +524,7 @@ class AgentTrace:
         if len(names) != len(set(names)):
             return True
         import re
+
         _auto_id = re.compile(r"^n\d+$")
         return any(not _auto_id.match(n.id) for n in self.nodes)
 
