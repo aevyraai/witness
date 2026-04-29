@@ -47,5 +47,3 @@ best_prompt*.md
 .reflex/
 /tmp/
 
-# Hive
-.hive/

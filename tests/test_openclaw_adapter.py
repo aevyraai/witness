@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from aevyra_witness.adapters.openclaw import from_openclaw_jsonl
 from aevyra_witness.trace import KIND_AGENT, KIND_REASON, KIND_TOOL
 
