@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/aevyraai/witness/actions/workflows/ci.yml/badge.svg)](https://github.com/aevyraai/witness/actions/workflows/ci.yml)
 [![Security](https://github.com/aevyraai/witness/actions/workflows/security.yml/badge.svg)](https://github.com/aevyraai/witness/actions/workflows/security.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 When an AI agent gives a wrong answer, which step caused it? The LLM call that
 misread the context? The tool that returned stale data? The retrieval that pulled
