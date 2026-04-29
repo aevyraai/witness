@@ -508,15 +508,25 @@ class AgentTrace:
     def _ids_are_useful(self) -> bool:
         """True when span ids add information worth printing in rendered text.
 
-        Ids are useful when the trace has DAG structure (any non-None
-        ``parent_id``) or when node names are ambiguous (repeat). For
-        flat linear traces with unique names, printing auto-assigned
-        ``n{index}`` just adds noise.
+        Ids are useful when:
+        - the trace has DAG structure (any non-None ``parent_id``), or
+        - node names repeat (ambiguous without ids), or
+        - any node has a user-supplied id (not the auto-assigned ``n{index}``
+          pattern) — such ids carry semantic meaning and help the LLM cite
+          culprits unambiguously.
+
+        For flat linear traces with unique names and only auto-assigned ids,
+        printing ``n{index}`` adds noise without helping attribution.
         """
         if any(n.parent_id is not None for n in self.nodes):
             return True
         names = [n.name for n in self.nodes]
-        return len(names) != len(set(names))
+        if len(names) != len(set(names)):
+            return True
+        import re
+
+        _auto_id = re.compile(r"^n\d+$")
+        return any(not _auto_id.match(n.id) for n in self.nodes)
 
     def _render_node(
         self,
